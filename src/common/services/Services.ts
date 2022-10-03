@@ -210,6 +210,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'off';
 export interface ITerminalOptions {
   allowProposedApi?: boolean;
   allowTransparency?: boolean;
+  allowMouseReporting?: boolean;
   altClickMovesCursor?: boolean;
   cols?: number;
   convertEol?: boolean;

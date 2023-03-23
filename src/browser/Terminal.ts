@@ -807,13 +807,15 @@ export class Terminal extends CoreTerminal implements ITerminal {
           return;
         }
 
-        // Construct and send sequences
-        const sequence = C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? 'O' : '[') + (ev.deltaY < 0 ? 'A' : 'B');
-        let data = '';
-        for (let i = 0; i < Math.abs(amount); i++) {
-          data += sequence;
+        if (this.optionsService.rawOptions.allowMouseReporting) {
+          // Construct and send sequences
+          const sequence = C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? 'O' : '[') + (ev.deltaY < 0 ? 'A' : 'B');
+          let data = '';
+          for (let i = 0; i < Math.abs(amount); i++) {
+            data += sequence;
+          }
+          this.coreService.triggerDataEvent(data, true);
         }
-        this.coreService.triggerDataEvent(data, true);
         return this.cancel(ev, true);
       }
 

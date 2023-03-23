@@ -117,6 +117,8 @@ export class Terminal extends CoreTerminal implements ITerminal {
    */
   private _unprocessedDeadKey: boolean = false;
 
+  private _activeMouseEvents: CoreMouseEventType = CoreMouseEventType.NONE;
+
   public linkifier2: ILinkifier2;
   public viewport: IViewport | undefined;
   private _compositionHelper: ICompositionHelper | undefined;
@@ -671,6 +673,53 @@ export class Terminal extends CoreTerminal implements ITerminal {
       });
     }
 
+    function mouseProtocolChangeHandler(events: CoreMouseEventType) {
+      // apply global changes on events
+      if (events) {
+        if (self.optionsService.rawOptions.logLevel === 'debug') {
+          self._logService.debug('Binding to mouse events:', self.coreMouseService.explainEvents(events));
+        }
+        self.element!.classList.add('enable-mouse-events');
+        self._selectionService!.disable();
+      } else {
+        self._logService.debug('Unbinding from mouse events.');
+        self.element!.classList.remove('enable-mouse-events');
+        self._selectionService!.enable();
+      }
+
+      // add/remove handlers from requestedEvents
+
+      if (!(events & CoreMouseEventType.MOVE)) {
+        el.removeEventListener('mousemove', requestedEvents.mousemove!);
+        requestedEvents.mousemove = null;
+      } else if (!requestedEvents.mousemove) {
+        el.addEventListener('mousemove', eventListeners.mousemove);
+        requestedEvents.mousemove = eventListeners.mousemove;
+      }
+
+      if (!(events & CoreMouseEventType.WHEEL)) {
+        el.removeEventListener('wheel', requestedEvents.wheel!);
+        requestedEvents.wheel = null;
+      } else if (!requestedEvents.wheel) {
+        el.addEventListener('wheel', eventListeners.wheel, { passive: false });
+        requestedEvents.wheel = eventListeners.wheel;
+      }
+
+      if (!(events & CoreMouseEventType.UP)) {
+        self._document!.removeEventListener('mouseup', requestedEvents.mouseup!);
+        requestedEvents.mouseup = null;
+      } else if (!requestedEvents.mouseup) {
+        requestedEvents.mouseup = eventListeners.mouseup;
+      }
+
+      if (!(events & CoreMouseEventType.DRAG)) {
+        self._document!.removeEventListener('mousemove', requestedEvents.mousedrag!);
+        requestedEvents.mousedrag = null;
+      } else if (!requestedEvents.mousedrag) {
+        requestedEvents.mousedrag = eventListeners.mousedrag;
+      }
+    }
+
     /**
      * Event listener state handling.
      * We listen to the onProtocolChange event of CoreMouseService and put
@@ -714,51 +763,17 @@ export class Terminal extends CoreTerminal implements ITerminal {
         }
       }
     };
-    this.register(this.coreMouseService.onProtocolChange(events => {
-      // apply global changes on events
-      if (events) {
-        if (this.optionsService.rawOptions.logLevel === 'debug') {
-          this._logService.debug('Binding to mouse events:', this.coreMouseService.explainEvents(events));
-        }
-        this.element!.classList.add('enable-mouse-events');
-        this._selectionService!.disable();
-      } else {
-        this._logService.debug('Unbinding from mouse events.');
-        this.element!.classList.remove('enable-mouse-events');
-        this._selectionService!.enable();
+    this.register(this.coreMouseService.onProtocolChange((events) => {
+      this._activeMouseEvents = events;
+      if (!this.optionsService.rawOptions.allowMouseReporting) {
+        events = CoreMouseEventType.NONE;
       }
-
-      // add/remove handlers from requestedEvents
-
-      if (!(events & CoreMouseEventType.MOVE)) {
-        el.removeEventListener('mousemove', requestedEvents.mousemove!);
-        requestedEvents.mousemove = null;
-      } else if (!requestedEvents.mousemove) {
-        el.addEventListener('mousemove', eventListeners.mousemove);
-        requestedEvents.mousemove = eventListeners.mousemove;
-      }
-
-      if (!(events & CoreMouseEventType.WHEEL)) {
-        el.removeEventListener('wheel', requestedEvents.wheel!);
-        requestedEvents.wheel = null;
-      } else if (!requestedEvents.wheel) {
-        el.addEventListener('wheel', eventListeners.wheel, { passive: false });
-        requestedEvents.wheel = eventListeners.wheel;
-      }
-
-      if (!(events & CoreMouseEventType.UP)) {
-        this._document!.removeEventListener('mouseup', requestedEvents.mouseup!);
-        requestedEvents.mouseup = null;
-      } else if (!requestedEvents.mouseup) {
-        requestedEvents.mouseup = eventListeners.mouseup;
-      }
-
-      if (!(events & CoreMouseEventType.DRAG)) {
-        this._document!.removeEventListener('mousemove', requestedEvents.mousedrag!);
-        requestedEvents.mousedrag = null;
-      } else if (!requestedEvents.mousedrag) {
-        requestedEvents.mousedrag = eventListeners.mousedrag;
-      }
+      mouseProtocolChangeHandler(events);
+    }));
+    this.register(this.optionsService.onOptionChange(() => {
+      let events = this.optionsService.rawOptions.allowMouseReporting ?
+        this._activeMouseEvents : CoreMouseEventType.NONE;
+      mouseProtocolChangeHandler(events);
     }));
     // force initial onProtocolChange so we dont miss early mouse requests
     this.coreMouseService.activeProtocol = this.coreMouseService.activeProtocol;
@@ -807,13 +822,15 @@ export class Terminal extends CoreTerminal implements ITerminal {
           return;
         }
 
-        // Construct and send sequences
-        const sequence = C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? 'O' : '[') + (ev.deltaY < 0 ? 'A' : 'B');
-        let data = '';
-        for (let i = 0; i < Math.abs(amount); i++) {
-          data += sequence;
+        if (this.optionsService.rawOptions.allowMouseReporting) {
+          // Construct and send sequences
+          const sequence = C0.ESC + (this.coreService.decPrivateModes.applicationCursorKeys ? 'O' : '[') + (ev.deltaY < 0 ? 'A' : 'B');
+          let data = '';
+          for (let i = 0; i < Math.abs(amount); i++) {
+            data += sequence;
+          }
+          this.coreService.triggerDataEvent(data, true);
         }
-        this.coreService.triggerDataEvent(data, true);
         return this.cancel(ev, true);
       }
 
